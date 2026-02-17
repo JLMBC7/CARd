@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MindAR Professional Card</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r123/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.1.4/dist/mindar-image-three.prod.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        #container { width: 100vw; height: 100vh; }
+        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-family: sans-serif; z-index: 10; }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading Experience...</div>
+    <div id="container"></div>
+
+    <script type="module">
+        const mindarThree = new window.MINDAR.IMAGE.MindARThree({
+            container: document.querySelector("#container"),
+            imageTargetSrc: './targets.mind', // Ensure this points to your compiled .mind file
+        });
+
+        const {renderer, scene, camera} = mindarThree;
+
+        // 1. Create the Anchor (The physical card reference)
+        const anchor = mindarThree.addAnchor(0);
+
+        // 2. Setup Objects (Mapping to your function names)
+        const setupScene = () => {
+            const loader = new THREE.TextureLoader();
+
+            // Avatar (e.g., a floating circle or plane)
+            const avatarGeometry = new THREE.CircleGeometry(0.5, 32);
+            const avatarMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const avatar = new THREE.Mesh(avatarGeometry, avatarMaterial);
+            avatar.name = "avatar"; // This allows target.getObject("avatar")
+            anchor.group.add(avatar);
+
+            // Resume Panel
+            const resumeGeo = new THREE.PlaneGeometry(1, 0.7);
+            const resumeMat = new THREE.MeshBasicMaterial({ color: 0xeeeeee, transparent: true, opacity: 0.9 });
+            const resume = new THREE.Mesh(resumeGeo, resumeMat);
+            resume.name = "resume";
+            anchor.group.add(resume);
+
+            // Icons
+            const iconNames = ['icon-email', 'icon-website', 'icon-youtube', 'icon-facebook'];
+            iconNames.forEach((name, i) => {
+                const geo = new THREE.CircleGeometry(0.1, 32);
+                const mat = new THREE.MeshBasicMaterial({ color: 0x333333 });
+                const icon = new THREE.Mesh(geo, mat);
+                icon.name = name;
+                icon.position.set(-0.6 + (i * 0.4), -0.6, 0); // Initial grid layout
+                anchor.group.add(icon);
+            });
+        };
+
+        // 3. Your Provided Logic
+        anchor.onTargetFound = () => {
+            document.getElementById('loading').style.display = 'none';
+        };
+
+        // Global update loop for MindAR
+        const clock = new THREE.Clock();
+        
+        const updateLogic = () => {
+            const time = clock.getElapsedTime();
+            
+            // Your custom logic goes here:
+            const avatar = anchor.group.getObjectByName("avatar");
+            const resume = anchor.group.getObjectByName("resume");
+            
+            if (avatar) {
+                const avatarScale = Math.min(0.5, (0.1 + time) * 0.5); // Adjusted scale for Three.js units
+                avatar.scale.set(avatarScale, avatarScale, avatarScale);
+                
+                // Bobbing animation after 4s
+                const animTime = Math.max(0, time - 4);
+                if (animTime > 0) {
+                    avatar.position.y = 0.1 * Math.sin(animTime);
+                }
+            }
+
+            if (resume) {
+                const resumeTime = Math.max(0, time - 1);
+                resume.position.x = Math.max(0, -1 + resumeTime); 
+                resume.scale.set(1, Math.min(1, resumeTime), 1);
+            }
+        };
+
+        // 4. Click Handler
+        window.addEventListener("click", (e) => {
+            const mouse = new THREE.Vector2();
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(anchor.group.children);
+
+            if (intersects.length > 0) {
+                const objName = intersects[0].object.name;
+                if (objName === 'icon-website') window.open("https://softmind.tech", '_blank');
+                if (objName === 'icon-email') window.open("mailto:hello@softmind.tech", '_blank');
+                // ... add other links
+            }
+        });
+
+        const start = async () => {
+            setupScene();
+            await mindarThree.start();
+            renderer.setAnimationLoop(() => {
+                updateLogic();
+                renderer.render(scene, camera);
+            });
+        }
+        start();
+    </script>
+</body>
+</html>
