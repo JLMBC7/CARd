@@ -8,88 +8,125 @@
     <style>
         body { margin: 0; overflow: hidden; }
         #container { width: 100vw; height: 100vh; }
-        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-family: sans-serif; z-index: 10; }
+        #loading { 
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+            color: white; font-family: sans-serif; z-index: 10; background: rgba(0,0,0,0.8);
+            padding: 20px; border-radius: 10px;
+        }
     </style>
 </head>
 <body>
-    <div id="loading">Loading Experience...</div>
+    <div id="loading">Point camera at target...</div>
     <div id="container"></div>
 
     <script type="module">
+        // Helper function to create placeholder icon textures dynamically
+        const createIconTexture = (symbol, color) => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = color;
+            ctx.fillRect(0, 0, 128, 128);
+            ctx.fillStyle = "white";
+            ctx.font = "bold 80px Arial";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(symbol, 64, 64);
+            return new THREE.CanvasTexture(canvas);
+        };
+
         const mindarThree = new window.MINDAR.IMAGE.MindARThree({
             container: document.querySelector("#container"),
-            imageTargetSrc: './targets.mind', // Ensure this points to your compiled .mind file
+            imageTargetSrc: './targets.mind', 
         });
 
         const {renderer, scene, camera} = mindarThree;
 
-        // 1. Create the Anchor (The physical card reference)
+        // Add some lighting for 3D objects
+        const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+        scene.add(light);
+
         const anchor = mindarThree.addAnchor(0);
 
-        // 2. Setup Objects (Mapping to your function names)
         const setupScene = () => {
-            const loader = new THREE.TextureLoader();
+            // 1. Avatar - Upgraded to a 3D Sphere "Head"
+            const avatarGroup = new THREE.Group();
+            const headGeo = new THREE.SphereGeometry(0.25, 32, 32);
+            const headMat = new THREE.MeshPhongMaterial({ color: 0x0077ff });
+            const head = new THREE.Mesh(headGeo, headMat);
+            
+            // Give it some "eyes" so we can see rotation
+            const eyeGeo = new THREE.SphereGeometry(0.05, 16, 16);
+            const eyeMat = new THREE.MeshBasicMaterial({color: 0xffffff});
+            const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+            eyeL.position.set(-0.1, 0.05, 0.2);
+            const eyeR = eyeL.clone();
+            eyeR.position.x = 0.1;
+            
+            avatarGroup.add(head, eyeL, eyeR);
+            avatarGroup.name = "avatar";
+            avatarGroup.position.set(0, 0.3, 0.1);
+            anchor.group.add(avatarGroup);
 
-            // Avatar (e.g., a floating circle or plane)
-            const avatarGeometry = new THREE.CircleGeometry(0.5, 32);
-            const avatarMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
-            const avatar = new THREE.Mesh(avatarGeometry, avatarMaterial);
-            avatar.name = "avatar"; // This allows target.getObject("avatar")
-            anchor.group.add(avatar);
-
-            // Resume Panel
-            const resumeGeo = new THREE.PlaneGeometry(1, 0.7);
-            const resumeMat = new THREE.MeshBasicMaterial({ color: 0xeeeeee, transparent: true, opacity: 0.9 });
+            // 2. Resume Panel - Added a border effect
+            const resumeGeo = new THREE.PlaneGeometry(1, 1.4);
+            const resumeMat = new THREE.MeshPhongMaterial({ 
+                color: 0xffffff, 
+                transparent: true, 
+                opacity: 0.9,
+                side: THREE.DoubleSide 
+            });
             const resume = new THREE.Mesh(resumeGeo, resumeMat);
             resume.name = "resume";
+            resume.position.set(0, 0, 0);
             anchor.group.add(resume);
 
-            // Icons
-            const iconNames = ['icon-email', 'icon-website', 'icon-youtube', 'icon-facebook'];
-            iconNames.forEach((name, i) => {
-                const geo = new THREE.CircleGeometry(0.1, 32);
-                const mat = new THREE.MeshBasicMaterial({ color: 0x333333 });
+            // 3. Interactive Icons
+            const icons = [
+                { name: 'icon-email', symbol: '✉', color: '#D44638' },
+                { name: 'icon-website', symbol: '🌐', color: '#3B5998' },
+                { name: 'icon-youtube', symbol: '▶', color: '#FF0000' },
+                { name: 'icon-facebook', symbol: 'f', color: '#1877F2' }
+            ];
+
+            icons.forEach((data, i) => {
+                const geo = new THREE.CircleGeometry(0.12, 32);
+                const mat = new THREE.MeshBasicMaterial({ map: createIconTexture(data.symbol, data.color) });
                 const icon = new THREE.Mesh(geo, mat);
-                icon.name = name;
-                icon.position.set(-0.6 + (i * 0.4), -0.6, 0); // Initial grid layout
+                icon.name = data.name;
+                // Positioned in a row below the resume
+                icon.position.set(-0.45 + (i * 0.3), -0.8, 0.05); 
                 anchor.group.add(icon);
             });
         };
 
-        // 3. Your Provided Logic
         anchor.onTargetFound = () => {
             document.getElementById('loading').style.display = 'none';
         };
 
-        // Global update loop for MindAR
         const clock = new THREE.Clock();
         
         const updateLogic = () => {
             const time = clock.getElapsedTime();
-            
-            // Your custom logic goes here:
             const avatar = anchor.group.getObjectByName("avatar");
             const resume = anchor.group.getObjectByName("resume");
             
             if (avatar) {
-                const avatarScale = Math.min(0.5, (0.1 + time) * 0.5); // Adjusted scale for Three.js units
-                avatar.scale.set(avatarScale, avatarScale, avatarScale);
-                
-                // Bobbing animation after 4s
-                const animTime = Math.max(0, time - 4);
-                if (animTime > 0) {
-                    avatar.position.y = 0.1 * Math.sin(animTime);
-                }
+                // Smooth scale in
+                const s = Math.min(1, time * 0.8);
+                avatar.scale.set(s, s, s);
+                // Float and rotate slightly
+                avatar.position.y = 0.4 + Math.sin(time * 2) * 0.05;
+                avatar.rotation.y = Math.sin(time) * 0.3;
             }
 
             if (resume) {
-                const resumeTime = Math.max(0, time - 1);
-                resume.position.x = Math.max(0, -1 + resumeTime); 
-                resume.scale.set(1, Math.min(1, resumeTime), 1);
+                // Slide in from the left
+                const resumeTime = Math.max(0, time - 0.5);
+                resume.position.x = Math.max(0, 1.5 - resumeTime * 2);
             }
         };
 
-        // 4. Click Handler
         window.addEventListener("click", (e) => {
             const mouse = new THREE.Vector2();
             mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
@@ -97,13 +134,17 @@
 
             const raycaster = new THREE.Raycaster();
             raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObjects(anchor.group.children);
+            const intersects = raycaster.intersectObjects(anchor.group.children, true);
 
             if (intersects.length > 0) {
-                const objName = intersects[0].object.name;
-                if (objName === 'icon-website') window.open("https://softmind.tech", '_blank');
-                if (objName === 'icon-email') window.open("mailto:hello@softmind.tech", '_blank');
-                // ... add other links
+                let target = intersects[0].object;
+                // Check parent if we clicked an "eye" or part of a group
+                const name = target.name || target.parent.name;
+                
+                if (name === 'icon-website') window.open("https://softmind.tech", '_blank');
+                if (name === 'icon-email') window.open("mailto:hello@softmind.tech", '_blank');
+                if (name === 'icon-youtube') alert("YouTube Clicked!");
+                if (name === 'icon-facebook') alert("Facebook Clicked!");
             }
         });
 
