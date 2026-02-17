@@ -6,71 +6,112 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r123/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.1.4/dist/mindar-image-three.prod.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; }
+        body { margin: 0; overflow: hidden; background-color: #000; }
         #container { width: 100vw; height: 100vh; }
-        #loading { 
-            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-            color: white; font-family: sans-serif; z-index: 10; background: rgba(0,0,0,0.8);
-            padding: 20px; border-radius: 10px;
+        #ui-overlay {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            text-align: center;
+            z-index: 10;
+            pointer-events: none;
+            transition: opacity 0.5s;
+        }
+        .status-pill {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
         }
     </style>
 </head>
 <body>
-    <div id="loading">Point camera at target...</div>
+    <div id="ui-overlay">
+        <div id="loading-status" class="status-pill">Initializing AR Engine...</div>
+    </div>
     <div id="container"></div>
 
     <script type="module">
-        // Helper function to create placeholder icon textures dynamically
+        // --- ASSET GENERATORS ---
         const createIconTexture = (symbol, color) => {
             const canvas = document.createElement('canvas');
-            canvas.width = 128; canvas.height = 128;
+            canvas.width = 256; canvas.height = 256;
             const ctx = canvas.getContext('2d');
+            
+            // Background circle
+            ctx.beginPath();
+            ctx.arc(128, 128, 120, 0, Math.PI * 2);
             ctx.fillStyle = color;
-            ctx.fillRect(0, 0, 128, 128);
+            ctx.fill();
+            
+            // Icon Text
             ctx.fillStyle = "white";
-            ctx.font = "bold 80px Arial";
+            ctx.font = "bold 140px Arial";
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            ctx.fillText(symbol, 64, 64);
-            return new THREE.CanvasTexture(canvas);
+            ctx.fillText(symbol, 128, 128);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.needsUpdate = true;
+            return texture;
         };
+
+        // --- AR SETUP ---
+        // Fix: Ensuring the URL is absolute or valid for the fetch API in this environment.
+        // Using a hosted example target for demonstration. Replace with your actual URL.
+        const targetFile = 'https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.1.4/examples/image-tracking/assets/card-example/card.mind';
 
         const mindarThree = new window.MINDAR.IMAGE.MindARThree({
             container: document.querySelector("#container"),
-            imageTargetSrc: './targets.mind', 
+            imageTargetSrc: targetFile, 
         });
 
         const {renderer, scene, camera} = mindarThree;
 
-        // Add some lighting for 3D objects
-        const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
-        scene.add(light);
+        // --- LIGHTING ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+        scene.add(ambientLight);
+
+        const directLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        directLight.position.set(0, 5, 5);
+        scene.add(directLight);
 
         const anchor = mindarThree.addAnchor(0);
+        const clock = new THREE.Clock();
+        let isFound = false;
 
         const setupScene = () => {
-            // 1. Avatar - Upgraded to a 3D Sphere "Head"
+            // 1. Avatar (3D Head)
             const avatarGroup = new THREE.Group();
-            const headGeo = new THREE.SphereGeometry(0.25, 32, 32);
-            const headMat = new THREE.MeshPhongMaterial({ color: 0x0077ff });
+            const headGeo = new THREE.SphereGeometry(0.2, 32, 32);
+            const headMat = new THREE.MeshStandardMaterial({ 
+                color: 0x4488ff,
+                roughness: 0.3,
+                metalness: 0.2
+            });
             const head = new THREE.Mesh(headGeo, headMat);
             
-            // Give it some "eyes" so we can see rotation
-            const eyeGeo = new THREE.SphereGeometry(0.05, 16, 16);
+            // Eyes
+            const eyeGeo = new THREE.SphereGeometry(0.04, 16, 16);
             const eyeMat = new THREE.MeshBasicMaterial({color: 0xffffff});
             const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-            eyeL.position.set(-0.1, 0.05, 0.2);
+            eyeL.position.set(-0.08, 0.05, 0.16);
             const eyeR = eyeL.clone();
-            eyeR.position.x = 0.1;
+            eyeR.position.x = 0.08;
             
             avatarGroup.add(head, eyeL, eyeR);
             avatarGroup.name = "avatar";
             avatarGroup.position.set(0, 0.3, 0.1);
+            avatarGroup.scale.set(0.001, 0.001, 0.001); 
             anchor.group.add(avatarGroup);
 
-            // 2. Resume Panel - Added a border effect
-            const resumeGeo = new THREE.PlaneGeometry(1, 1.4);
-            const resumeMat = new THREE.MeshPhongMaterial({ 
+            // 2. Resume Panel
+            const resumeGeo = new THREE.PlaneGeometry(1, 0.7);
+            const resumeMat = new THREE.MeshStandardMaterial({ 
                 color: 0xffffff, 
                 transparent: true, 
                 opacity: 0.9,
@@ -78,84 +119,116 @@
             });
             const resume = new THREE.Mesh(resumeGeo, resumeMat);
             resume.name = "resume";
-            resume.position.set(0, 0, 0);
+            resume.position.set(0, 0, 0.01);
             anchor.group.add(resume);
 
             // 3. Interactive Icons
-            const icons = [
-                { name: 'icon-email', symbol: '✉', color: '#D44638' },
-                { name: 'icon-website', symbol: '🌐', color: '#3B5998' },
-                { name: 'icon-youtube', symbol: '▶', color: '#FF0000' },
-                { name: 'icon-facebook', symbol: 'f', color: '#1877F2' }
+            const iconData = [
+                { name: 'icon-email', sym: '✉', col: '#EA4335' },
+                { name: 'icon-website', sym: 'W', col: '#34A853' },
+                { name: 'icon-youtube', sym: 'Y', col: '#FF0000' },
+                { name: 'icon-facebook', sym: 'f', col: '#4267B2' }
             ];
 
-            icons.forEach((data, i) => {
-                const geo = new THREE.CircleGeometry(0.12, 32);
-                const mat = new THREE.MeshBasicMaterial({ map: createIconTexture(data.symbol, data.color) });
+            iconData.forEach((data, i) => {
+                const geo = new THREE.CircleGeometry(0.08, 32);
+                const mat = new THREE.MeshBasicMaterial({ 
+                    map: createIconTexture(data.sym, data.col),
+                    transparent: true 
+                });
                 const icon = new THREE.Mesh(geo, mat);
                 icon.name = data.name;
-                // Positioned in a row below the resume
-                icon.position.set(-0.45 + (i * 0.3), -0.8, 0.05); 
+                icon.position.set(-0.375 + (i * 0.25), -0.45, 0.05);
                 anchor.group.add(icon);
             });
         };
 
         anchor.onTargetFound = () => {
-            document.getElementById('loading').style.display = 'none';
+            isFound = true;
+            clock.start();
+            const status = document.getElementById('loading-status');
+            if (status) status.innerText = "Card Recognized!";
+            setTimeout(() => {
+                const overlay = document.getElementById('ui-overlay');
+                if (overlay) overlay.style.opacity = '0';
+            }, 1500);
         };
 
-        const clock = new THREE.Clock();
-        
+        anchor.onTargetLost = () => {
+            isFound = false;
+            const overlay = document.getElementById('ui-overlay');
+            const status = document.getElementById('loading-status');
+            if (overlay) overlay.style.opacity = '1';
+            if (status) status.innerText = "Align card with camera";
+        };
+
         const updateLogic = () => {
+            if (!isFound) return;
+            
             const time = clock.getElapsedTime();
             const avatar = anchor.group.getObjectByName("avatar");
             const resume = anchor.group.getObjectByName("resume");
             
             if (avatar) {
-                // Smooth scale in
-                const s = Math.min(1, time * 0.8);
+                const s = Math.min(1, time * 2.0);
                 avatar.scale.set(s, s, s);
-                // Float and rotate slightly
-                avatar.position.y = 0.4 + Math.sin(time * 2) * 0.05;
-                avatar.rotation.y = Math.sin(time) * 0.3;
+                avatar.position.y = 0.35 + Math.sin(time * 2) * 0.03;
+                avatar.rotation.y = Math.sin(time * 0.5) * 0.3;
             }
 
             if (resume) {
-                // Slide in from the left
-                const resumeTime = Math.max(0, time - 0.5);
-                resume.position.x = Math.max(0, 1.5 - resumeTime * 2);
+                const rTime = Math.max(0, time - 0.4);
+                resume.position.x = Math.max(0, 0.8 - rTime * 1.5);
+                resume.scale.y = Math.min(1, rTime * 2);
             }
         };
 
-        window.addEventListener("click", (e) => {
+        const handleInteraction = (clientX, clientY) => {
             const mouse = new THREE.Vector2();
-            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            mouse.x = (clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(clientY / window.innerHeight) * 2 + 1;
 
             const raycaster = new THREE.Raycaster();
             raycaster.setFromCamera(mouse, camera);
             const intersects = raycaster.intersectObjects(anchor.group.children, true);
 
             if (intersects.length > 0) {
-                let target = intersects[0].object;
-                // Check parent if we clicked an "eye" or part of a group
-                const name = target.name || target.parent.name;
+                const obj = intersects[0].object;
+                const name = obj.name || obj.parent.name;
                 
                 if (name === 'icon-website') window.open("https://softmind.tech", '_blank');
                 if (name === 'icon-email') window.open("mailto:hello@softmind.tech", '_blank');
-                if (name === 'icon-youtube') alert("YouTube Clicked!");
-                if (name === 'icon-facebook') alert("Facebook Clicked!");
+                
+                // Haptic feedback simulation
+                obj.scale.multiplyScalar(1.2);
+                setTimeout(() => obj.scale.divideScalar(1.2), 100);
             }
-        });
+        };
+
+        window.addEventListener("touchstart", (e) => handleInteraction(e.touches[0].clientX, e.touches[0].clientY));
+        window.addEventListener("mousedown", (e) => handleInteraction(e.clientX, e.clientY));
 
         const start = async () => {
-            setupScene();
-            await mindarThree.start();
-            renderer.setAnimationLoop(() => {
-                updateLogic();
-                renderer.render(scene, camera);
-            });
+            try {
+                setupScene();
+                const status = document.getElementById('loading-status');
+                if (status) status.innerText = "Requesting Camera Access...";
+                
+                await mindarThree.start();
+                
+                if (status) status.innerText = "Scan your business card";
+                
+                renderer.setAnimationLoop(() => {
+                    updateLogic();
+                    renderer.render(scene, camera);
+                });
+            } catch (err) {
+                console.error("AR Start Error:", err);
+                const status = document.getElementById('loading-status');
+                if (status) status.innerText = "Error: Check camera permissions";
+            }
         }
+        
         start();
     </script>
 </body>
